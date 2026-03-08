@@ -1,63 +1,52 @@
+<div align="center">
+
 # rustmond
 
-**rustmond** is a lightweight Rust-based monitoring daemon designed to
-run directly on a Linux VPS.
+**A lightweight Linux monitoring daemon written in Rust.**
 
-It collects system metrics and web traffic data and exposes them through
-a simple HTTP API for inspection or future dashboards.
+Collects server health metrics and exposes them via an HTTP API.
 
-The project exists primarily as a learning exercise in:
+[![Rust](https://img.shields.io/badge/Rust-1.85+-orange?logo=rust)](#prerequisites)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/Status-Active_Development-brightgreen)](#roadmap)
 
--   Systems programming
--   Linux server internals
--   Rust async architecture
--   Observability tooling
+</div>
 
-In simpler terms:
+---
 
-> Stop building SaaS toys and start building tools servers actually care
-> about.
+## Overview
 
-------------------------------------------------------------------------
+**rustmond** is a monitoring daemon designed to run on a Linux VPS. It periodically samples system metrics — CPU usage, memory consumption, and more — and serves them through a JSON API built on [Axum](https://github.com/tokio-rs/axum). The daemon is architected to support additional data sources, starting with Apache access log ingestion.
 
-# Features (MVP)
+The goal is a single, statically-compiled binary that can be deployed as a `systemd` service and queried by dashboards, alerting tools, or any HTTP client.
 
-The current MVP includes:
+---
+
+## Features
 
 ### System Metrics Collector
+Samples host-level metrics on a configurable interval using [`sysinfo`](https://crates.io/crates/sysinfo):
+- CPU utilization (%)
+- Memory used / total (bytes)
 
-Collects host metrics using the `sysinfo` crate:
+### Apache Log Collector *(in progress)*
+A background task designed to tail and parse Apache access logs, extracting:
+- Request method & endpoint
+- HTTP status codes
+- Response size
+- Client IP address
 
--   CPU usage
--   Memory usage
--   System resource statistics
+### HTTP API
+A non-blocking HTTP server exposes collected metrics as JSON.
 
-Metrics are sampled periodically and stored in memory.
+| Endpoint | Description |
+|---|---|
+| `GET /health` | Liveness check — returns `"ok"` |
+| `GET /metrics/system` | Current CPU and memory metrics |
 
-### Apache Traffic Collector (Stub)
+**Example response** — `GET /metrics/system`:
 
-A background collector designed to ingest Apache access logs.\
-The MVP currently includes a placeholder collector that will later
-parse:
-
--   request method
--   endpoint
--   status codes
--   response size
--   client IP
-
-### HTTP Metrics API
-
-An HTTP server exposes monitoring data.
-
-Available endpoints:
-
-    GET /health
-    GET /metrics/system
-
-Example response:
-
-``` json
+```json
 {
   "cpu": 21.3,
   "memory_used": 1245184000,
@@ -65,178 +54,177 @@ Example response:
 }
 ```
 
-------------------------------------------------------------------------
+---
 
-# Architecture
+## Architecture
 
-The monitoring agent is composed of three main subsystems.
+```
+┌──────────────────────────────────────────────────┐
+│                    rustmond                       │
+│                                                   │
+│   ┌─────────────────┐    ┌─────────────────┐     │
+│   │ System Collector │    │ Apache Collector │     │
+│   │   (sysinfo)      │    │   (log parser)   │     │
+│   └────────┬─────────┘    └────────┬─────────┘     │
+│            │                       │               │
+│            ▼                       ▼               │
+│        ┌───────────────────────────────┐           │
+│        │     Shared Metrics Store      │           │
+│        │     Arc<RwLock<MetricsStore>> │           │
+│        └──────────────┬────────────────┘           │
+│                       │                            │
+│                       ▼                            │
+│              ┌─────────────────┐                   │
+│              │   Axum HTTP API  │                   │
+│              │   0.0.0.0:8080   │                   │
+│              └─────────────────┘                   │
+└──────────────────────────────────────────────────┘
+```
 
-    Apache logs ──► Apache Collector
-                         │
-                         ▼
-                    Metrics Store
-                         ▲
-    System Metrics ─► System Collector
-                         │
-                         ▼
-                       API Server
+**Collectors** run as independent `tokio` tasks that write metrics into a shared, lock-protected store. The **API server** reads from the same store to serve requests — a clean reader/writer separation with no blocking.
 
-## Components
+---
 
-### Collectors
+## Project Structure
 
-Background tasks responsible for collecting data:
+```
+src/
+├── main.rs              # Entrypoint — spawns collectors, starts API server
+├── api/
+│   ├── mod.rs
+│   └── server.rs        # Axum routes and handlers
+├── collectors/
+│   ├── mod.rs
+│   ├── system.rs        # System metrics sampling loop
+│   └── apache.rs        # Apache log collector (stub)
+├── metrics/
+│   ├── mod.rs
+│   └── store.rs         # Shared in-memory metrics store
+├── lifecycle/
+│   ├── mod.rs
+│   └── shutdown.rs      # Graceful shutdown handling
+└── config/
+    └── mod.rs           # Runtime configuration
+```
 
--   `collectors/system.rs` -- gathers system metrics
--   `collectors/apache.rs` -- parses Apache access logs (future)
+---
 
-### Metrics Store
+## Getting Started
 
-A shared in‑memory state store accessed by all collectors and the API.
+### Prerequisites
 
-Implemented with:
+- [Rust](https://www.rust-lang.org/tools/install) 1.85+ (edition 2024)
 
-    Arc<RwLock<MetricsStore>>
+### Build & Run
 
-Collectors write metrics.\
-The API reads metrics.
+```bash
+# Clone the repository
+git clone https://github.com/djmartin2019/rustmond.git
+cd rustmond
 
-### API Server
+# Run in development mode
+cargo run
 
-A lightweight HTTP server built with **Axum** that exposes monitoring
-data.
+# Or build a release binary
+cargo build --release
+./target/release/rustmond
+```
 
-------------------------------------------------------------------------
+The API server starts on **`http://localhost:8080`**.
 
-# Project Structure
+### Verify
 
-    src
-    ├ api
-    │  ├ mod.rs
-    │  └ server.rs
-    │
-    ├ collectors
-    │  ├ mod.rs
-    │  ├ apache.rs
-    │  └ system.rs
-    │
-    ├ metrics
-    │  ├ mod.rs
-    │  └ store.rs
-    │
-    ├ lifecycle
-    │  ├ mod.rs
-    │  └ shutdown.rs
-    │
-    ├ config
-    │  └ mod.rs
-    │
-    └ main.rs
+```bash
+curl http://localhost:8080/health
+# "ok"
 
-------------------------------------------------------------------------
+curl http://localhost:8080/metrics/system
+# {"cpu":12.5,"memory_used":2147483648,"memory_total":8589934592}
+```
 
-# Running Locally
+---
 
-Install Rust if needed:
+## Deployment
 
-    curl https://sh.rustup.rs -sSf | sh
+### Building for Linux
 
-Run the project:
+```bash
+cargo build --release
+```
 
-    cargo run
+The output binary at `target/release/rustmond` is a single static executable — copy it to your server and run.
 
-The API server will start on:
+### Running as a systemd Service
 
-    http://localhost:8080
+Create a unit file at `/etc/systemd/system/rustmond.service`:
 
-Test endpoints:
+```ini
+[Unit]
+Description=rustmond — system monitoring daemon
+After=network.target
 
-    curl http://localhost:8080/health
-    curl http://localhost:8080/metrics/system
+[Service]
+Type=simple
+ExecStart=/opt/rustmond/rustmond
+Restart=on-failure
+RestartSec=5
+User=root
 
-------------------------------------------------------------------------
+[Install]
+WantedBy=multi-user.target
+```
 
-# Deployment
+Enable and start:
 
-The intended deployment target is a Linux VPS.
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable rustmond
+sudo systemctl start rustmond
+sudo systemctl status rustmond
+```
 
-Typical workflow:
+---
 
-    git clone https://github.com/<user>/rustmond
-    cd rustmond
-    cargo build --release
+## Tech Stack
 
-Binary location:
+| Component | Crate | Purpose |
+|---|---|---|
+| Async runtime | [`tokio`](https://crates.io/crates/tokio) | Task scheduling, networking, timers |
+| HTTP framework | [`axum`](https://crates.io/crates/axum) | API routing and request handling |
+| System metrics | [`sysinfo`](https://crates.io/crates/sysinfo) | Cross-platform CPU/memory sampling |
+| File watching | [`notify`](https://crates.io/crates/notify) | File-system event monitoring |
+| Serialization | [`serde`](https://crates.io/crates/serde) / [`serde_json`](https://crates.io/crates/serde_json) | JSON serialization |
+| Logging | [`tracing`](https://crates.io/crates/tracing) | Structured, async-aware logging |
+| Error handling | [`anyhow`](https://crates.io/crates/anyhow) | Ergonomic error propagation |
 
-    target/release/rustmond
+---
 
-------------------------------------------------------------------------
+## Roadmap
 
-# Running as a Linux Daemon
+- [ ] Apache access log tailing and parsing
+- [ ] Requests-per-minute and endpoint frequency metrics
+- [ ] Prometheus-compatible `/metrics` export
+- [ ] Persistent metric storage (time-series)
+- [ ] Web-based dashboard
+- [ ] Configuration file support (TOML)
+- [ ] Multi-server aggregation
 
-Example `systemd` service:
+---
 
-    /etc/systemd/system/rustmond.service
+## Contributing
 
-    [Unit]
-    Description=Rust Monitoring Agent
-    After=network.target
+Contributions, issues, and feature requests are welcome. Feel free to open an issue or submit a pull request.
 
-    [Service]
-    ExecStart=/opt/rustmond/rustmond
-    Restart=always
-    User=root
+---
 
-    [Install]
-    WantedBy=multi-user.target
+## License
 
-Enable service:
+This project is licensed under the [MIT License](LICENSE).
 
-    sudo systemctl daemon-reload
-    sudo systemctl enable rustmond
-    sudo systemctl start rustmond
+---
 
-------------------------------------------------------------------------
+<div align="center">
 
-# Future Roadmap
+Built by [David Martin](https://github.com/djmartin2019)
 
-Planned improvements:
-
--   Apache log tailing
--   Requests per minute metrics
--   Endpoint frequency statistics
--   Prometheus compatible metrics
--   Web dashboard
--   Persistent metrics storage
--   Multi-server monitoring
-
-The long-term goal is to evolve this project into a lightweight
-observability stack.
-
-------------------------------------------------------------------------
-
-# Why Rust
-
-Rust is ideal for infrastructure tooling because it provides:
-
--   native performance
--   memory safety
--   zero-cost abstractions
--   single static binaries
--   excellent async runtime support
-
-Many modern observability tools are written in Rust for these reasons.
-
-------------------------------------------------------------------------
-
-# License
-
-MIT
-
-------------------------------------------------------------------------
-
-# Author
-
-David Martin\
-https://github.com/djmartin2019
-
+</div>
