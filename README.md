@@ -59,10 +59,10 @@ A non-blocking HTTP server exposes collected metrics as JSON.
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────┐
-│                    rustmond                       │
-│                                                   │
-│   ┌─────────────────┐    ┌─────────────────┐     │
+┌────────────────────────────────────────────────────┐
+│                    rustmond                        │
+│                                                    │
+│   ┌──────────────────┐    ┌──────────────────┐     │
 │   │ System Collector │    │ Apache Collector │     │
 │   │   (sysinfo)      │    │   (log parser)   │     │
 │   └────────┬─────────┘    └────────┬─────────┘     │
@@ -75,10 +75,10 @@ A non-blocking HTTP server exposes collected metrics as JSON.
 │                       │                            │
 │                       ▼                            │
 │              ┌─────────────────┐                   │
-│              │   Axum HTTP API  │                   │
-│              │   0.0.0.0:8080   │                   │
+│              │  Axum HTTP API  │                   │
+│              │  0.0.0.0:8080   │                   │
 │              └─────────────────┘                   │
-└──────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────┘
 ```
 
 **Collectors** run as independent `tokio` tasks that write metrics into a shared, lock-protected store. The **API server** reads from the same store to serve requests — a clean reader/writer separation with no blocking.
