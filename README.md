@@ -22,6 +22,24 @@ The goal is a single, statically-compiled binary that can be deployed as a `syst
 
 ---
 
+## Why rustmond?
+
+Modern observability stacks are powerful but often heavy — requiring multiple services,
+databases, and dashboards.
+
+`rustmond` explores a different approach:
+
+A **single, lightweight binary** that can run directly on a server, collect metrics,
+and expose them through a simple HTTP API.
+
+The project also serves as a learning exercise in:
+
+- Linux daemon architecture
+- asynchronous Rust services
+- metrics collection and observability tooling
+
+---
+
 ## Features
 
 ### System Metrics Collector
